@@ -8,6 +8,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const postBtn = document.getElementById("postBtn");
   const loadPopupBtn = document.getElementById("loadPopupBtn");
   const clickBtn = document.getElementById("clickBtn");
+  const fillBtn = document.getElementById("fillBtn");
+  const fillValueInput = document.getElementById("fillValue");
+  const fillElementDropdown = document.getElementById("fillElementDropdown");
+  const refreshFillElementsBtn = document.getElementById("refreshFillElementsBtn");
   const elementDropdown = document.getElementById("elementDropdown");
   const refreshElementsBtn = document.getElementById("refreshElementsBtn");
   const apiUrlInput = document.getElementById("apiUrl");
@@ -286,6 +290,93 @@ document.addEventListener("DOMContentLoaded", () => {
       log("Click error: " + error.message);
     } finally {
       clickBtn.disabled = false;
+    }
+  });
+
+  // ─── Refresh Fill Element List ────────────────────────────────────────────
+  refreshFillElementsBtn.addEventListener("click", async () => {
+    try {
+      refreshFillElementsBtn.disabled = true;
+      setStatus("Scanning page textboxes...", "info");
+      log("Extracting fillable elements for dropdown...", "REFILL");
+
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["content.js"]
+      });
+
+      const response = await chrome.tabs.sendMessage(tab.id, { type: "getFillElementsList" });
+
+      fillElementDropdown.innerHTML = "";
+
+      if (response && response.elements && response.elements.length > 0) {
+        response.elements.forEach((el, i) => {
+          const option = document.createElement("option");
+          option.value = el.selector;
+          option.textContent = el.label;
+          fillElementDropdown.appendChild(option);
+        });
+        setStatus(`Loaded ${response.elements.length} textboxes`, "success");
+        log(`Fill dropdown populated with ${response.elements.length} textboxes`, "REFILL");
+      } else {
+        fillElementDropdown.innerHTML = '<option value="">-- No textboxes found --</option>';
+        setStatus("No fillable textboxes found", "error");
+        log("Page has no fillable textbox elements", "REFILL");
+      }
+    } catch (error) {
+      setStatus("Error: " + error.message, "error");
+      log("Refresh fill error: " + error.message);
+    } finally {
+      refreshFillElementsBtn.disabled = false;
+    }
+  });
+
+  // ─── 8. Fill Textbox on Page ──────────────────────────────────────────────
+  fillBtn.addEventListener("click", async () => {
+    try {
+      fillBtn.disabled = true;
+      const selector = fillElementDropdown.value;
+      const fillText = fillValueInput.value;
+
+      if (!selector) {
+        setStatus("Select a textbox first (click Refresh)", "error");
+        log("No textbox selected", "FILL");
+        fillBtn.disabled = false;
+        return;
+      }
+
+      if (!fillText && fillText !== "") {
+        setStatus("Enter text to fill", "error");
+        log("No fill text provided", "FILL");
+        fillBtn.disabled = false;
+        return;
+      }
+
+      setStatus(`Filling textbox (${selector})...`, "info");
+      log(`Filling textbox: selector="${selector}" with "${fillText}"`, "FILL");
+
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        type: "fillBySelector",
+        selector: selector,
+        text: fillText
+      });
+
+      if (response && response.success) {
+        setStatus(`Filled: ${response.description}`, "success");
+        log(`Successfully filled: ${response.description}`, "FILL");
+      } else {
+        setStatus("Fill failed: " + (response?.error || "unknown"), "error");
+        log(`Fill failed: ${response?.error}`, "FILL");
+      }
+    } catch (error) {
+      setStatus("Error: " + error.message, "error");
+      log("Fill error: " + error.message);
+    } finally {
+      fillBtn.disabled = false;
     }
   });
 

@@ -186,6 +186,22 @@
     <button id="clickBtn" class="btn-click">7. Click Element on Page</button>
   </div>
 
+  <!-- EXECUTE FILL -->
+  <div class="click-config" id="fillConfig">
+    <div style="margin-bottom:6px;">
+      <div>
+        <label for="fillElementDropdown">Select textbox from page:</label>
+        <select id="fillElementDropdown">
+          <option value="">-- Click "Refresh" to load textboxes --</option>
+        </select>
+      </div>
+        <button id="refreshFillElementsBtn" style="background:#3949ab;color:white;font-size:11px;padding:6px 10px;margin-bottom:0;">Refresh Textbox List</button>
+    </div>
+    <label for="fillValue">Text to fill:</label>
+    <input type="text" id="fillValue" placeholder="Enter text to type into textbox">
+    <button id="fillBtn" class="btn-click" style="background:#3949ab;">8. Fill Textbox on Page</button>
+  </div>
+
 
   <div id="logArea" class="log-area">Waiting for actions...</div>
 
