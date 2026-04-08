@@ -3,6 +3,7 @@
   "name": "Hello World",
   "version": "1.0",
   "description": "A simple hello world Chrome extension",
+  "permissions": ["storage"],
   "action": {
     "default_popup": "popup.html"
   }
