@@ -1,7 +1,80 @@
 // ─── Configuration ──────────────────────────────────────────────────────────
 const DESIRED_ELEMENTS = ["INPUT", "SELECT", "A", "BUTTON", "TEXTAREA"];
+const FILLABLE_INPUT_TYPES = ["text", "email", "password", "search", "tel", "url", "number"];
 
 console.log("[AutoNav Content] Loaded on:", window.location.href);
+
+// ─── Utilities ──────────────────────────────────────────────────────────────
+const Utils = (() => {
+  /**
+   * Extract metadata from an element and build a readable label + CSS selector.
+   * @param {Element} el
+   * @param {number} index
+   * @param {Object} opts - { textOverride, href, labelPrefix }
+   * @returns {Object}
+   */
+  function buildElementInfo(el, index, opts = {}) {
+    const tagName = el.tagName.toLowerCase();
+    const type = el.type || "";
+    const id = el.id || "";
+    const name = el.name || "";
+    const text = (opts.textOverride || el.innerText || el.textContent || el.value || "").trim().substring(0, 40);
+    const href = opts.href || (el.href ? el.href.substring(0, 40) : "");
+
+    let label = opts.labelPrefix !== undefined ? opts.labelPrefix : `[${index}] <${tagName}`;
+    if (type) label += ` type="${type}"`;
+    if (id) label += ` #${id}`;
+    if (name) label += ` name="${name}"`;
+    if (text) label += ` "${text}"`;
+    if (href) label += ` → ${href}`;
+    label += ">";
+
+    let selector = tagName;
+    if (id) selector = `#${id}`;
+    else if (name) selector += `[name="${name}"]`;
+
+    return { index, tagName, type, id, name, text, label, selector };
+  }
+
+  /**
+   * Scroll element into view, then apply visual feedback after a delay.
+   * @param {Element} el
+   * @param {Object} opts - { scrollDelay, feedbackStyle, feedbackValue, feedbackDuration, action }
+   * @returns {Promise<void>}
+   */
+  function scrollAndHighlight(el, opts = {}) {
+    const scrollDelay = opts.scrollDelay ?? 300;
+    const feedbackStyle = opts.feedbackStyle || "outline";
+    const feedbackValue = opts.feedbackValue || "3px solid #ff5722";
+    const feedbackDuration = opts.feedbackDuration ?? 1000;
+
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        if (opts.action) opts.action(el);
+
+        // Apply visual feedback
+        const original = el.style[feedbackStyle];
+        el.style[feedbackStyle] = feedbackValue;
+        el.style.transition = `${feedbackStyle} 0.3s`;
+        setTimeout(() => {
+          el.style[feedbackStyle] = original;
+          resolve();
+        }, feedbackDuration);
+      }, scrollDelay);
+    });
+  }
+
+  function isFillableElement(el) {
+    const tagName = el.tagName.toLowerCase();
+    if (tagName === "textarea") return true;
+    if (tagName === "input") return FILLABLE_INPUT_TYPES.includes(el.type || "");
+    return false;
+  }
+
+  return { buildElementInfo, scrollAndHighlight, isFillableElement };
+})();
 
 // ─── Message Listener ───────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -80,88 +153,34 @@ function getElementsList() {
   const allInteractive = document.querySelectorAll(DESIRED_ELEMENTS.join(","));
 
   allInteractive.forEach((el, i) => {
-    const tagName = el.tagName.toLowerCase();
-    const type = el.type || "";
-    const id = el.id || "";
-    const name = el.name || "";
-    const text = (el.innerText || el.textContent || el.value || "").trim().substring(0, 40);
-    const href = el.href ? el.href.substring(0, 40) : "";
-
-    // Build readable label
-    let label = `[${i}] <${tagName}`;
-    if (type) label += ` type="${type}"`;
-    if (id) label += ` #${id}`;
-    if (name) label += ` name="${name}"`;
-    if (text) label += ` "${text}"`;
-    if (href) label += ` → ${href}`;
-    label += ">";
-
-    // Build CSS selector
-    let selector = tagName;
-    if (id) selector = `#${id}`;
-    else if (name) selector += `[name="${name}"]`;
-
-    elements.push({
-      index: i,
-      tagName: tagName,
-      type: type,
-      id: id,
-      name: name,
-      text: text,
-      label: label,
-      selector: selector
+    const info = Utils.buildElementInfo(el, i, {
+      href: el.href ? el.href.substring(0, 40) : ""
     });
+    elements.push(info);
   });
 
-  return { elements: elements };
+  return { elements };
 }
 
 // ─── Get Fillable Elements List for Dropdown ────────────────────────────────
 function getFillElementsList() {
   const elements = [];
-  const fillableInputTypes = ["text", "email", "password", "search", "tel", "url", "number"];
   const allInteractive = document.querySelectorAll(DESIRED_ELEMENTS.join(","));
 
   allInteractive.forEach((el) => {
-    const tagName = el.tagName.toLowerCase();
-    const type = el.type || "";
+    if (!Utils.isFillableElement(el)) return;
 
-    // Only allow: <textarea> OR <input> with fillable type
-    const isTextarea = tagName === "textarea";
-    const isFillableInput = tagName === "input" && fillableInputTypes.includes(type);
-
-    if (!isTextarea && !isFillableInput) return;
-
-    const id = el.id || "";
-    const name = el.name || "";
     const text = (el.placeholder || el.value || "").trim().substring(0, 40);
-
-    // Build readable label
-    let label = `[${elements.length}] <${tagName}`;
-    if (type) label += ` type="${type}"`;
-    if (id) label += ` #${id}`;
-    if (name) label += ` name="${name}"`;
-    if (text) label += ` placeholder="${text}"`;
-    label += ">";
-
-    // Build CSS selector
-    let selector = tagName;
-    if (id) selector = `#${id}`;
-    else if (name) selector += `[name="${name}"]`;
-
-    elements.push({
-      index: [...allInteractive].indexOf(el),
-      tagName: tagName,
-      type: type,
-      id: id,
-      name: name,
-      text: text,
-      label: label,
-      selector: selector
+    const info = Utils.buildElementInfo(el, elements.length, {
+      textOverride: text,
+      labelPrefix: undefined
     });
+    // Rebuild label with placeholder prefix
+    info.label = `[${elements.length}] <${info.tagName}${info.type ? ` type="${info.type}"` : ""}${info.id ? ` #${info.id}` : ""}${info.name ? ` name="${info.name}"` : ""}${info.text ? ` placeholder="${info.text}"` : ""}>`;
+    elements.push(info);
   });
 
-  return { elements: elements };
+  return { elements };
 }
 
 // ─── Click Element by Index ─────────────────────────────────────────────────
@@ -176,36 +195,26 @@ function clickByIndex(index) {
   const tagName = element.tagName.toLowerCase();
   const text = (element.innerText || element.textContent || element.value || "").trim().substring(0, 50);
 
-  // Scroll into view
-  element.scrollIntoView({ behavior: "smooth", block: "center" });
-
-  // Brief delay for scroll animation
-  setTimeout(() => {
-    element.focus();
-    element.click();
-
-    console.log("[AutoNav Content] Clicked element:", element.outerHTML.substring(0, 100));
-
-    // Visual feedback - brief highlight
-    const originalOutline = element.style.outline;
-    element.style.outline = "3px solid #ff5722";
-    element.style.transition = "outline 0.3s";
-    setTimeout(() => {
-      element.style.outline = originalOutline;
-    }, 1000);
-  }, 300);
+  Utils.scrollAndHighlight(element, {
+    action: (el) => {
+      el.focus();
+      el.click();
+      console.log("[AutoNav Content] Clicked element:", el.outerHTML.substring(0, 100));
+    },
+    feedbackStyle: "outline",
+    feedbackValue: "3px solid #ff5722"
+  });
 
   return {
     success: true,
     description: `<${tagName}> "${text}" (index ${index})`,
-    tagName: tagName,
-    index: index
+    tagName,
+    index
   };
 }
 
 // ─── Fill Textbox by CSS Selector ───────────────────────────────────────────
 function fillBySelector(selector, text) {
-  const fillableInputTypes = ["text", "email", "password", "search", "tel", "url", "number"];
   const element = document.querySelector(selector);
 
   if (!element) {
@@ -215,55 +224,38 @@ function fillBySelector(selector, text) {
   const tagName = element.tagName.toLowerCase();
   const type = element.type || "";
 
-  // Validate it's actually fillable
-  const isTextarea = tagName === "textarea";
-  const isFillableInput = tagName === "input" && fillableInputTypes.includes(type);
-
-  if (!isTextarea && !isFillableInput) {
+  if (!Utils.isFillableElement(element)) {
     return { success: false, error: `Element "${selector}" is <${tagName}${type ? ` type="${type}"` : ""}> — not a fillable textbox` };
   }
 
-  // Scroll into view
-  element.scrollIntoView({ behavior: "smooth", block: "center" });
+  Utils.scrollAndHighlight(element, {
+    action: (el) => {
+      el.focus();
+      el.value = "";
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
 
-  // Brief delay for scroll
-  setTimeout(() => {
-    element.focus();
+      for (let i = 0; i < text.length; i++) {
+        el.value += text[i];
+        el.dispatchEvent(new KeyboardEvent("keydown", { key: text[i], bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent("keypress", { key: text[i], bubbles: true }));
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      }
 
-    // Clear existing value
-    element.value = "";
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-
-    // Simulate typing character by character
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
-      element.value += char;
-      element.dispatchEvent(new KeyboardEvent("keydown", { key: char, bubbles: true }));
-      element.dispatchEvent(new KeyboardEvent("keypress", { key: char, bubbles: true }));
-      element.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-    element.dispatchEvent(new Event("blur", { bubbles: true }));
-
-    console.log("[AutoNav Content] Filled element with:", text);
-
-    // Visual feedback
-    const originalBg = element.style.background;
-    element.style.background = "#e8f5e9";
-    element.style.transition = "background 0.3s";
-    setTimeout(() => {
-      element.style.background = originalBg;
-    }, 1000);
-  }, 300);
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      el.dispatchEvent(new Event("blur", { bubbles: true }));
+      console.log("[AutoNav Content] Filled element with:", text);
+    },
+    feedbackStyle: "background",
+    feedbackValue: "#e8f5e9"
+  });
 
   const desc = `<${tagName}${type ? ` type="${type}"` : ""}> filled with "${text.substring(0, 30)}${text.length > 30 ? "..." : ""}"`;
 
   return {
     success: true,
     description: desc,
-    tagName: tagName,
-    selector: selector
+    tagName,
+    selector
   };
 }

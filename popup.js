@@ -1,3 +1,79 @@
+// ─── Utilities ──────────────────────────────────────────────────────────────
+const Utils = (() => {
+  let statusEl, logArea;
+
+  function init(statusElement, logElement) {
+    statusEl = statusElement;
+    logArea = logElement;
+  }
+
+  function setStatus(message, type = "info") {
+    if (!statusEl) return;
+    statusEl.textContent = message;
+    statusEl.className = `status ${type}`;
+  }
+
+  function log(message, section = null) {
+    if (!logArea) return;
+    const separator = section ? "\n======== [" + section + "] ========\n" : "";
+    const timestamp = new Date().toLocaleTimeString();
+    const logLine = `${separator}[${timestamp}] ${message}`;
+    logArea.textContent += logLine;
+    logArea.scrollTop = logArea.scrollHeight;
+    console.log(`[AutoNav]${section ? " [" + section + "]" : ""}`, message);
+  }
+
+  async function getConfig() {
+    const result = await chrome.storage.local.get(["apiUrl"]);
+    return result.apiUrl || "https://httpbin.org/get";
+  }
+
+  async function setConfig(data) {
+    await chrome.storage.local.set(data);
+  }
+
+  async function withButton(btn, section, asyncFn) {
+    try {
+      btn.disabled = true;
+      await asyncFn();
+    } catch (error) {
+      setStatus("Error: " + error.message, "error");
+      log("Error: " + error.message, section);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function getActiveTab() {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tabs.length > 0 ? tabs[0] : null;
+  }
+
+  async function injectAndMessage(tabId, message) {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content.js"]
+    });
+    return chrome.tabs.sendMessage(tabId, message);
+  }
+
+  function populateDropdown(selectEl, elements, valueFn, textFn, emptyMsg) {
+    selectEl.innerHTML = "";
+    if (elements && elements.length > 0) {
+      elements.forEach((el, i) => {
+        const option = document.createElement("option");
+        option.value = valueFn(el, i);
+        option.textContent = textFn(el, i);
+        selectEl.appendChild(option);
+      });
+    } else {
+      selectEl.innerHTML = `<option value="">-- ${emptyMsg} --</option>`;
+    }
+  }
+
+  return { init, setStatus, log, getConfig, setConfig, withButton, getActiveTab, injectAndMessage, populateDropdown };
+})();
+
 document.addEventListener("DOMContentLoaded", () => {
   // ─── Elements ──────────────────────────────────────────────────────────────
   const statusEl = document.getElementById("status");
@@ -21,387 +97,219 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let downloadMonitoringActive = false;
 
-  // ─── Helpers ───────────────────────────────────────────────────────────────
-  function setStatus(message, type = "info") {
-    statusEl.textContent = message;
-    statusEl.className = `status ${type}`;
-  }
-
-  function log(message, section = null) {
-    const separator = section ? "\n======== [" + section + "] ========\n" : "";
-    const timestamp = new Date().toLocaleTimeString();
-    const logLine = `${separator}[${timestamp}] ${message}`;
-
-    // Log to popup
-    logArea.textContent += logLine;
-    logArea.scrollTop = logArea.scrollHeight;
-
-    // Log to browser console
-    console.log(`[AutoNav]${section ? " [" + section + "]" : ""}`, message);
-  }
-
-  async function getConfig() {
-    const result = await chrome.storage.local.get(["apiUrl"]);
-    return result.apiUrl || "https://httpbin.org/get";
-  }
-
-  async function setConfig(data) {
-    await chrome.storage.local.set(data);
-  }
+  // ─── Initialize Utils ─────────────────────────────────────────────────────
+  Utils.init(statusEl, logArea);
 
   // ─── Load Config on Open ──────────────────────────────────────────────────
-  getConfig().then((url) => {
+  Utils.getConfig().then((url) => {
     apiUrlInput.value = url;
-    log("Config loaded: " + url);
+    Utils.log("Config loaded: " + url);
   });
 
   // ─── 1. Extract Interactive DOM Elements ───────────────────────────────────
-  domBtn.addEventListener("click", async () => {
-    try {
-      domBtn.disabled = true;
-      setStatus("Extracting elements...", "info");
-      log("Triggering DOM extraction in content script...", "DOM EXTRACT");
-
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-      // Inject content script if not already loaded
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ["content.js"]
-      });
-
-      const response = await chrome.tabs.sendMessage(tab.id, { type: "extractDom" });
-
+  domBtn.addEventListener("click", () => {
+    Utils.withButton(domBtn, "DOM EXTRACT", async () => {
+      Utils.setStatus("Extracting elements...", "info");
+      Utils.log("Triggering DOM extraction in content script...", "DOM EXTRACT");
+      const tab = await Utils.getActiveTab();
+      const response = await Utils.injectAndMessage(tab.id, { type: "extractDom" });
       if (response && response.count) {
-        setStatus(`Extracted ${response.count} elements`, "success");
-        log(`Received ${response.count} interactive elements`);
-        log(`Sample: ${JSON.stringify(response.sample).substring(0, 100)}...`);
+        Utils.setStatus(`Extracted ${response.count} elements`, "success");
+        Utils.log(`Received ${response.count} interactive elements`, "DOM EXTRACT");
+        Utils.log(`Sample: ${JSON.stringify(response.sample).substring(0, 100)}...`, "DOM EXTRACT");
       } else {
-        setStatus("No response from content script", "error");
-        log("No response received");
+        Utils.setStatus("No response from content script", "error");
+        Utils.log("No response received", "DOM EXTRACT");
       }
-    } catch (error) {
-      setStatus("Error: " + error.message, "error");
-      log("Error: " + error.message);
-    } finally {
-      domBtn.disabled = false;
-    }
+    });
   });
 
   // ─── 2. Take Screenshot ───────────────────────────────────────────────────
-  screenshotBtn.addEventListener("click", async () => {
-    try {
-      screenshotBtn.disabled = true;
-      setStatus("Capturing screenshot...", "info");
-      log("Capturing visible tab screenshot...", "SCREENSHOT");
-
-      const dataUrl = await chrome.tabs.captureVisibleTab(
-        chrome.windows.WINDOW_ID_CURRENT,
-        { format: "png" }
-      );
-
+  screenshotBtn.addEventListener("click", () => {
+    Utils.withButton(screenshotBtn, "SCREENSHOT", async () => {
+      Utils.setStatus("Capturing screenshot...", "info");
+      Utils.log("Capturing visible tab screenshot...", "SCREENSHOT");
+      const dataUrl = await chrome.tabs.captureVisibleTab(chrome.windows.WINDOW_ID_CURRENT, { format: "png" });
       const base64 = dataUrl.split(",")[1];
-      await setConfig({ screenshotBase64: base64 });
-
-      setStatus(`Screenshot saved (${base64.length} chars)`, "success");
-      log(`Screenshot captured: ${base64.length} base64 characters stored in chrome.storage.local`);
-    } catch (error) {
-      setStatus("Error: " + error.message, "error");
-      log("Screenshot error: " + error.message);
-    } finally {
-      screenshotBtn.disabled = false;
-    }
+      await Utils.setConfig({ screenshotBase64: base64 });
+      Utils.setStatus(`Screenshot saved (${base64.length} chars)`, "success");
+      Utils.log(`Screenshot captured: ${base64.length} base64 characters stored in chrome.storage.local`, "SCREENSHOT");
+    });
   });
 
   // ─── 3. Send Content → Background Message ─────────────────────────────────
-  messageBtn.addEventListener("click", async () => {
-    try {
-      messageBtn.disabled = true;
-      setStatus("Sending message to content script...", "info");
-      log("Requesting content script to send message back...", "CONTENT MSG");
-
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-      // Inject content script if not already loaded
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ["content.js"]
-      });
-
-      await chrome.tabs.sendMessage(tab.id, { type: "sendMessageToBackground" });
-
-      setStatus("Message sent! Check logs.", "success");
-      log("Content script will now send message to background");
-    } catch (error) {
-      setStatus("Error: " + error.message, "error");
-      log("Message error: " + error.message);
-    } finally {
-      messageBtn.disabled = false;
-    }
+  messageBtn.addEventListener("click", () => {
+    Utils.withButton(messageBtn, "CONTENT MSG", async () => {
+      Utils.setStatus("Sending message to content script...", "info");
+      Utils.log("Requesting content script to send message back...", "CONTENT MSG");
+      const tab = await Utils.getActiveTab();
+      await Utils.injectAndMessage(tab.id, { type: "sendMessageToBackground" });
+      Utils.setStatus("Message sent! Check logs.", "success");
+      Utils.log("Content script will now send message to background", "CONTENT MSG");
+    });
   });
 
   // ─── 4. Make GET Request ──────────────────────────────────────────────────
-  getBtn.addEventListener("click", async () => {
-    try {
-      getBtn.disabled = true;
+  getBtn.addEventListener("click", () => {
+    Utils.withButton(getBtn, "GET REQUEST", async () => {
       const url = apiUrlInput.value || "https://httpbin.org/get";
-      setStatus(`GET ${url}...`, "info");
-      log(`Making GET request to: ${url}`, "GET REQUEST");
-
+      Utils.setStatus(`GET ${url}...`, "info");
+      Utils.log(`Making GET request to: ${url}`, "GET REQUEST");
       const response = await fetch(url);
       const data = await response.json();
-
-      setStatus("GET request successful", "success");
-      log(`Response: ${JSON.stringify(data).substring(0, 150)}...`);
-    } catch (error) {
-      setStatus("Error: " + error.message, "error");
-      log("GET error: " + error.message);
-    } finally {
-      getBtn.disabled = false;
-    }
+      Utils.setStatus("GET request successful", "success");
+      Utils.log(`Response: ${JSON.stringify(data).substring(0, 150)}...`, "GET REQUEST");
+    });
   });
 
   // ─── 5. Make POST Request ─────────────────────────────────────────────────
-  postBtn.addEventListener("click", async () => {
-    try {
-      postBtn.disabled = true;
+  postBtn.addEventListener("click", () => {
+    Utils.withButton(postBtn, "POST REQUEST", async () => {
       const url = apiUrlInput.value || "https://httpbin.org/post";
-      setStatus(`POST ${url}...`, "info");
-      log(`Making POST request to: ${url}`, "POST REQUEST");
-
-      const payload = {
-        timestamp: Date.now(),
-        message: "Hello from extension",
-        screenshotStored: true
-      };
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-
+      Utils.setStatus(`POST ${url}...`, "info");
+      Utils.log(`Making POST request to: ${url}`, "POST REQUEST");
+      const payload = { timestamp: Date.now(), message: "Hello from extension", screenshotStored: true };
+      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json();
-
-      setStatus("POST request successful", "success");
-      log(`Response: ${JSON.stringify(data).substring(0, 150)}...`);
-    } catch (error) {
-      setStatus("Error: " + error.message, "error");
-      log("POST error: " + error.message);
-    } finally {
-      postBtn.disabled = false;
-    }
+      Utils.setStatus("POST request successful", "success");
+      Utils.log(`Response: ${JSON.stringify(data).substring(0, 150)}...`, "POST REQUEST");
+    });
   });
 
   // ─── 6. Load Popup ────────────────────────────────────────────────────────
-  loadPopupBtn.addEventListener("click", async () => {
-    try {
-      loadPopupBtn.disabled = true;
-      setStatus("Opening overlay...", "info");
-      log("Injecting page overlay...", "LOAD POPUP");
-
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: showOverlay
-      });
-
-      setStatus("Overlay displayed on page", "success");
-      log("Overlay injected into page DOM", "LOAD POPUP");
-    } catch (error) {
-      setStatus("Error: " + error.message, "error");
-      log("Overlay error: " + error.message);
-    } finally {
-      loadPopupBtn.disabled = false;
-    }
+  loadPopupBtn.addEventListener("click", () => {
+    Utils.withButton(loadPopupBtn, "LOAD POPUP", async () => {
+      Utils.setStatus("Opening overlay...", "info");
+      Utils.log("Injecting page overlay...", "LOAD POPUP");
+      const tab = await Utils.getActiveTab();
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: showOverlay });
+      Utils.setStatus("Overlay displayed on page", "success");
+      Utils.log("Overlay injected into page DOM", "LOAD POPUP");
+    });
   });
 
   // ─── Refresh Element List ─────────────────────────────────────────────────
-  refreshElementsBtn.addEventListener("click", async () => {
-    try {
-      refreshElementsBtn.disabled = true;
-      setStatus("Scanning page elements...", "info");
-      log("Extracting interactive elements for dropdown...", "REFRESH");
-
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ["content.js"]
-      });
-
-      const response = await chrome.tabs.sendMessage(tab.id, { type: "getElementsList" });
-
-      elementDropdown.innerHTML = "";
-
-      if (response && response.elements && response.elements.length > 0) {
-        response.elements.forEach((el, i) => {
-          const option = document.createElement("option");
-          option.value = JSON.stringify({ index: i, id: el.id, selector: el.selector });
-          option.textContent = el.label;
-          elementDropdown.appendChild(option);
-        });
-        setStatus(`Loaded ${response.elements.length} elements`, "success");
-        log(`Dropdown populated with ${response.elements.length} elements`, "REFRESH");
+  refreshElementsBtn.addEventListener("click", () => {
+    Utils.withButton(refreshElementsBtn, "REFRESH", async () => {
+      Utils.setStatus("Scanning page elements...", "info");
+      Utils.log("Extracting interactive elements for dropdown...", "REFRESH");
+      const tab = await Utils.getActiveTab();
+      const response = await Utils.injectAndMessage(tab.id, { type: "getElementsList" });
+      Utils.populateDropdown(
+        elementDropdown,
+        response?.elements || [],
+        (el, i) => JSON.stringify({ index: i, id: el.id, selector: el.selector }),
+        (el) => el.label,
+        "No elements found"
+      );
+      if (response?.elements?.length > 0) {
+        Utils.setStatus(`Loaded ${response.elements.length} elements`, "success");
+        Utils.log(`Dropdown populated with ${response.elements.length} elements`, "REFRESH");
       } else {
-        elementDropdown.innerHTML = '<option value="">-- No elements found --</option>';
-        setStatus("No interactive elements found", "error");
-        log("Page has no interactive elements", "REFRESH");
+        Utils.setStatus("No interactive elements found", "error");
+        Utils.log("Page has no interactive elements", "REFRESH");
       }
-    } catch (error) {
-      setStatus("Error: " + error.message, "error");
-      log("Refresh error: " + error.message);
-    } finally {
-      refreshElementsBtn.disabled = false;
-    }
+    });
   });
 
   // ─── 7. Click Element on Page ─────────────────────────────────────────────
-  clickBtn.addEventListener("click", async () => {
-    try {
-      clickBtn.disabled = true;
+  clickBtn.addEventListener("click", () => {
+    Utils.withButton(clickBtn, "CLICK", async () => {
       const selected = elementDropdown.value;
-
       if (!selected) {
-        setStatus("Select an element first (click Refresh)", "error");
-        log("No element selected", "CLICK");
-        clickBtn.disabled = false;
+        Utils.setStatus("Select an element first (click Refresh)", "error");
+        Utils.log("No element selected", "CLICK");
         return;
       }
-
       const target = JSON.parse(selected);
-      setStatus(`Clicking element (index ${target.index})...`, "info");
-      log(`Clicking element: index=${target.index}`, "CLICK");
-
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-      const response = await chrome.tabs.sendMessage(tab.id, {
-        type: "clickByIndex",
-        index: target.index
-      });
-
-      if (response && response.success) {
-        setStatus(`Clicked: ${response.description}`, "success");
-        log(`Successfully clicked: ${response.description}`, "CLICK");
+      Utils.setStatus(`Clicking element (index ${target.index})...`, "info");
+      Utils.log(`Clicking element: index=${target.index}`, "CLICK");
+      const tab = await Utils.getActiveTab();
+      const response = await chrome.tabs.sendMessage(tab.id, { type: "clickByIndex", index: target.index });
+      if (response?.success) {
+        Utils.setStatus(`Clicked: ${response.description}`, "success");
+        Utils.log(`Successfully clicked: ${response.description}`, "CLICK");
       } else {
-        setStatus("Click failed: " + (response?.error || "unknown"), "error");
-        log(`Click failed: ${response?.error}`, "CLICK");
+        Utils.setStatus("Click failed: " + (response?.error || "unknown"), "error");
+        Utils.log(`Click failed: ${response?.error}`, "CLICK");
       }
-    } catch (error) {
-      setStatus("Error: " + error.message, "error");
-      log("Click error: " + error.message);
-    } finally {
-      clickBtn.disabled = false;
-    }
+    });
   });
 
   // ─── Refresh Fill Element List ────────────────────────────────────────────
-  refreshFillElementsBtn.addEventListener("click", async () => {
-    try {
-      refreshFillElementsBtn.disabled = true;
-      setStatus("Scanning page textboxes...", "info");
-      log("Extracting fillable elements for dropdown...", "REFILL");
-
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ["content.js"]
-      });
-
-      const response = await chrome.tabs.sendMessage(tab.id, { type: "getFillElementsList" });
-
-      fillElementDropdown.innerHTML = "";
-
-      if (response && response.elements && response.elements.length > 0) {
-        response.elements.forEach((el, i) => {
-          const option = document.createElement("option");
-          option.value = el.selector;
-          option.textContent = el.label;
-          fillElementDropdown.appendChild(option);
-        });
-        setStatus(`Loaded ${response.elements.length} textboxes`, "success");
-        log(`Fill dropdown populated with ${response.elements.length} textboxes`, "REFILL");
+  refreshFillElementsBtn.addEventListener("click", () => {
+    Utils.withButton(refreshFillElementsBtn, "REFILL", async () => {
+      Utils.setStatus("Scanning page textboxes...", "info");
+      Utils.log("Extracting fillable elements for dropdown...", "REFILL");
+      const tab = await Utils.getActiveTab();
+      const response = await Utils.injectAndMessage(tab.id, { type: "getFillElementsList" });
+      Utils.populateDropdown(
+        fillElementDropdown,
+        response?.elements || [],
+        (el) => el.selector,
+        (el) => el.label,
+        "No textboxes found"
+      );
+      if (response?.elements?.length > 0) {
+        Utils.setStatus(`Loaded ${response.elements.length} textboxes`, "success");
+        Utils.log(`Fill dropdown populated with ${response.elements.length} textboxes`, "REFILL");
       } else {
-        fillElementDropdown.innerHTML = '<option value="">-- No textboxes found --</option>';
-        setStatus("No fillable textboxes found", "error");
-        log("Page has no fillable textbox elements", "REFILL");
+        Utils.setStatus("No fillable textboxes found", "error");
+        Utils.log("Page has no fillable textbox elements", "REFILL");
       }
-    } catch (error) {
-      setStatus("Error: " + error.message, "error");
-      log("Refresh fill error: " + error.message);
-    } finally {
-      refreshFillElementsBtn.disabled = false;
-    }
+    });
   });
 
   // ─── 8. Fill Textbox on Page ──────────────────────────────────────────────
-  fillBtn.addEventListener("click", async () => {
-    try {
-      fillBtn.disabled = true;
+  fillBtn.addEventListener("click", () => {
+    Utils.withButton(fillBtn, "FILL", async () => {
       const selector = fillElementDropdown.value;
       const fillText = fillValueInput.value;
-
       if (!selector) {
-        setStatus("Select a textbox first (click Refresh)", "error");
-        log("No textbox selected", "FILL");
-        fillBtn.disabled = false;
+        Utils.setStatus("Select a textbox first (click Refresh)", "error");
+        Utils.log("No textbox selected", "FILL");
         return;
       }
-
       if (!fillText && fillText !== "") {
-        setStatus("Enter text to fill", "error");
-        log("No fill text provided", "FILL");
-        fillBtn.disabled = false;
+        Utils.setStatus("Enter text to fill", "error");
+        Utils.log("No fill text provided", "FILL");
         return;
       }
-
-      setStatus(`Filling textbox (${selector})...`, "info");
-      log(`Filling textbox: selector="${selector}" with "${fillText}"`, "FILL");
-
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-      const response = await chrome.tabs.sendMessage(tab.id, {
-        type: "fillBySelector",
-        selector: selector,
-        text: fillText
-      });
-
-      if (response && response.success) {
-        setStatus(`Filled: ${response.description}`, "success");
-        log(`Successfully filled: ${response.description}`, "FILL");
+      Utils.setStatus(`Filling textbox (${selector})...`, "info");
+      Utils.log(`Filling textbox: selector="${selector}" with "${fillText}"`, "FILL");
+      const tab = await Utils.getActiveTab();
+      const response = await chrome.tabs.sendMessage(tab.id, { type: "fillBySelector", selector, text: fillText });
+      if (response?.success) {
+        Utils.setStatus(`Filled: ${response.description}`, "success");
+        Utils.log(`Successfully filled: ${response.description}`, "FILL");
       } else {
-        setStatus("Fill failed: " + (response?.error || "unknown"), "error");
-        log(`Fill failed: ${response?.error}`, "FILL");
+        Utils.setStatus("Fill failed: " + (response?.error || "unknown"), "error");
+        Utils.log(`Fill failed: ${response?.error}`, "FILL");
       }
-    } catch (error) {
-      setStatus("Error: " + error.message, "error");
-      log("Fill error: " + error.message);
-    } finally {
-      fillBtn.disabled = false;
-    }
+    });
   });
 
   // ─── 9. Toggle Download Monitor ───────────────────────────────────────────
-  downloadMonitorBtn.addEventListener("click", async () => {
-    try {
+  downloadMonitorBtn.addEventListener("click", () => {
+    Utils.withButton(downloadMonitorBtn, "DOWNLOAD", async () => {
       const response = await chrome.runtime.sendMessage({
         type: "toggleDownloadMonitoring",
         enabled: downloadMonitorBtn.textContent.includes("Enable")
       });
-
       downloadMonitoringActive = response.active;
       downloadMonitorBtn.textContent = downloadMonitoringActive
         ? "9. Disable Download Monitor"
         : "9. Enable Download Monitor";
+      Utils.setStatus(`Download monitoring ${downloadMonitoringActive ? "ENABLED" : "DISABLED"}`, "success");
+      Utils.log(`Download monitor ${downloadMonitoringActive ? "activated" : "deactivated"}`, "DOWNLOAD");
+    });
+  });
 
-      setStatus(`Download monitoring ${downloadMonitoringActive ? "ENABLED" : "DISABLED"}`, "success");
-      log(`Download monitor ${downloadMonitoringActive ? "activated" : "deactivated"}`, "DOWNLOAD");
-    } catch (error) {
-      setStatus("Error: " + error.message, "error");
-      log("Download monitor error: " + error.message);
-    }
+  // ─── Save Config ──────────────────────────────────────────────────────────
+  saveBtn.addEventListener("click", async () => {
+    await Utils.setConfig({ apiUrl: apiUrlInput.value });
+    Utils.setStatus("Config saved", "success");
+    Utils.log("Config saved: " + apiUrlInput.value, "SAVE CONFIG");
   });
 
   // ─── Listen for download events from background ───────────────────────────

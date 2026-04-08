@@ -1,5 +1,18 @@
 console.log("[AutoNav Background] Service worker loaded");
 
+// ─── Utilities ──────────────────────────────────────────────────────────────
+const Utils = (() => {
+  function notifyPopup(data) {
+    chrome.runtime.sendMessage({ type: "downloadEvent", data }).catch(() => {});
+  }
+
+  function createDownloadEntry(event, details) {
+    return { event, ...details, timestamp: Date.now() };
+  }
+
+  return { notifyPopup, createDownloadEntry };
+})();
+
 // ─── Download Monitoring State ──────────────────────────────────────────────
 let downloadMonitoringActive = false;
 let downloadLog = [];
@@ -27,8 +40,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.downloads.onCreated.addListener((downloadItem) => {
   if (!downloadMonitoringActive) return;
 
-  const entry = {
-    event: "created",
+  const entry = Utils.createDownloadEntry("created", {
     id: downloadItem.id,
     filename: downloadItem.filename || "pending",
     url: downloadItem.url || "unknown",
@@ -37,38 +49,26 @@ chrome.downloads.onCreated.addListener((downloadItem) => {
     mime: downloadItem.mime || "unknown",
     startTime: downloadItem.startTime,
     state: downloadItem.state
-  };
+  });
 
   downloadLog.push(entry);
   console.log("[AutoNav Background] Download created:", entry);
-
-  // Notify all open popups
-  chrome.runtime.sendMessage({
-    type: "downloadEvent",
-    data: entry
-  }).catch(() => {}); // Ignore if no popup open
+  Utils.notifyPopup(entry);
 });
 
 chrome.downloads.onChanged.addListener((downloadDelta) => {
   if (!downloadMonitoringActive) return;
 
-  const entry = {
-    event: "changed",
+  const entry = Utils.createDownloadEntry("changed", {
     id: downloadDelta.id,
     filename: downloadDelta.filename?.current || "unknown",
     state: downloadDelta.state?.current || "unknown",
     bytesReceived: downloadDelta.bytesReceived?.current || 0,
     totalBytes: downloadDelta.totalBytes?.current || 0,
-    error: downloadDelta.error?.current || null,
-    timestamp: Date.now()
-  };
+    error: downloadDelta.error?.current || null
+  });
 
   downloadLog.push(entry);
   console.log("[AutoNav Background] Download changed:", entry);
-
-  // Notify all open popups
-  chrome.runtime.sendMessage({
-    type: "downloadEvent",
-    data: entry
-  }).catch(() => {}); // Ignore if no popup open
+  Utils.notifyPopup(entry);
 });
