@@ -93,13 +93,17 @@
       margin-bottom: 2px;
     }
 
-    .click-config input, .click-config select {
+    .click-config select, .click-config input {
       width: 100%;
       padding: 5px 6px;
       margin-bottom: 6px;
       border: 1px solid #ddd;
       border-radius: 4px;
       font-size: 12px;
+    }
+
+    .click-config select {
+      max-height: 150px;
     }
 
     .config-section {
@@ -157,18 +161,18 @@
   <button id="getBtn" class="btn-get">4. Make GET Request</button>
   <button id="postBtn" class="btn-post">5. Make POST Request</button>
   <button id="loadPopupBtn" class="btn-load">6. Load Popup</button>
-  <button id="clickBtn" class="btn-click">7. Click Button on Page</button>
 
   <div class="click-config" id="clickConfig">
-    <label for="clickBy">Identify button by:</label>
-    <select id="clickBy">
-      <option value="selector">CSS Selector</option>
-      <option value="text">Button Text</option>
-      <option value="id">Element ID</option>
-      <option value="index">Index (0-based)</option>
-    </select>
-    <label for="clickValue">Value:</label>
-    <input type="text" id="clickValue" placeholder="e.g. #submit-btn, Submit, myId, 0">
+    <div style="margin-bottom:6px;">
+      <div>
+        <label for="elementDropdown">Select element from page:</label>
+        <select id="elementDropdown">
+          <option value="">-- Click "Refresh" to load elements --</option>
+        </select>
+      </div>
+        <button id="refreshElementsBtn" style="background:#7c4dff;color:white;font-size:11px;padding:6px 10px;margin-bottom:0;">Refresh Element List</button>
+    </div>
+    <button id="clickBtn" class="btn-click">7. Click Element on Page</button>
   </div>
 
   <div class="config-section">

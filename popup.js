@@ -8,8 +8,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const postBtn = document.getElementById("postBtn");
   const loadPopupBtn = document.getElementById("loadPopupBtn");
   const clickBtn = document.getElementById("clickBtn");
-  const clickBySelect = document.getElementById("clickBy");
-  const clickValueInput = document.getElementById("clickValue");
+  const elementDropdown = document.getElementById("elementDropdown");
+  const refreshElementsBtn = document.getElementById("refreshElementsBtn");
   const apiUrlInput = document.getElementById("apiUrl");
   const saveBtn = document.getElementById("saveBtn");
   const logArea = document.getElementById("logArea");
@@ -210,22 +210,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // ─── 7. Click Button on Page ──────────────────────────────────────────────
-  clickBtn.addEventListener("click", async () => {
+  // ─── Refresh Element List ─────────────────────────────────────────────────
+  refreshElementsBtn.addEventListener("click", async () => {
     try {
-      clickBtn.disabled = true;
-      const clickBy = clickBySelect.value;
-      const clickValue = clickValueInput.value.trim();
-
-      if (!clickValue) {
-        setStatus("Enter a value to identify the button", "error");
-        log("No value provided for button identification", "CLICK");
-        clickBtn.disabled = false;
-        return;
-      }
-
-      setStatus(`Clicking button (${clickBy}: "${clickValue}")...`, "info");
-      log(`Finding and clicking element: ${clickBy}="${clickValue}"`, "CLICK");
+      refreshElementsBtn.disabled = true;
+      setStatus("Scanning page elements...", "info");
+      log("Extracting interactive elements for dropdown...", "REFRESH");
 
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
@@ -234,18 +224,62 @@ document.addEventListener("DOMContentLoaded", () => {
         files: ["content.js"]
       });
 
+      const response = await chrome.tabs.sendMessage(tab.id, { type: "getElementsList" });
+
+      elementDropdown.innerHTML = "";
+
+      if (response && response.elements && response.elements.length > 0) {
+        response.elements.forEach((el, i) => {
+          const option = document.createElement("option");
+          option.value = JSON.stringify({ index: i, id: el.id, selector: el.selector });
+          option.textContent = el.label;
+          elementDropdown.appendChild(option);
+        });
+        setStatus(`Loaded ${response.elements.length} elements`, "success");
+        log(`Dropdown populated with ${response.elements.length} elements`, "REFRESH");
+      } else {
+        elementDropdown.innerHTML = '<option value="">-- No elements found --</option>';
+        setStatus("No interactive elements found", "error");
+        log("Page has no interactive elements", "REFRESH");
+      }
+    } catch (error) {
+      setStatus("Error: " + error.message, "error");
+      log("Refresh error: " + error.message);
+    } finally {
+      refreshElementsBtn.disabled = false;
+    }
+  });
+
+  // ─── 7. Click Element on Page ─────────────────────────────────────────────
+  clickBtn.addEventListener("click", async () => {
+    try {
+      clickBtn.disabled = true;
+      const selected = elementDropdown.value;
+
+      if (!selected) {
+        setStatus("Select an element first (click Refresh)", "error");
+        log("No element selected", "CLICK");
+        clickBtn.disabled = false;
+        return;
+      }
+
+      const target = JSON.parse(selected);
+      setStatus(`Clicking element (index ${target.index})...`, "info");
+      log(`Clicking element: index=${target.index}`, "CLICK");
+
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
       const response = await chrome.tabs.sendMessage(tab.id, {
-        type: "clickElement",
-        clickBy: clickBy,
-        clickValue: clickValue
+        type: "clickByIndex",
+        index: target.index
       });
 
       if (response && response.success) {
         setStatus(`Clicked: ${response.description}`, "success");
         log(`Successfully clicked: ${response.description}`, "CLICK");
       } else {
-        setStatus("Element not found: " + (response?.error || "unknown"), "error");
-        log(`Failed to find element: ${response?.error}`, "CLICK");
+        setStatus("Click failed: " + (response?.error || "unknown"), "error");
+        log(`Click failed: ${response?.error}`, "CLICK");
       }
     } catch (error) {
       setStatus("Error: " + error.message, "error");

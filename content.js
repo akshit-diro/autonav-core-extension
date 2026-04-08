@@ -15,6 +15,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       count: result.count
     });
     sendResponse(result);
+  } else if (message.type === "getElementsList") {
+    const list = getElementsList();
+    console.log("[AutoNav Content] Returning", list.elements.length, "elements for dropdown");
+    sendResponse(list);
+  } else if (message.type === "clickByIndex") {
+    const result = clickByIndex(message.index);
+    console.log("[AutoNav Content] Click result:", result);
+    sendResponse(result);
   } else if (message.type === "sendMessageToBackground") {
     console.log("[AutoNav Content] Sending message to background");
     chrome.runtime.sendMessage({
@@ -22,10 +30,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       text: "Hello from content script on " + window.location.href
     });
     sendResponse({ status: "message sent" });
-  } else if (message.type === "clickElement") {
-    const result = clickElementByDOM(message.clickBy, message.clickValue);
-    console.log("[AutoNav Content] Click result:", result);
-    sendResponse(result);
   }
 
   return true; // Keep message channel open for async response
@@ -62,59 +66,65 @@ function iterateDOM(element) {
   }
 }
 
-// ─── Click Element by DOM Identifier ────────────────────────────────────────
-function clickElementByDOM(clickBy, clickValue) {
-  let element = null;
-  let description = "";
+// ─── Get Elements List for Dropdown ─────────────────────────────────────────
+function getElementsList() {
+  const elements = [];
+  const allInteractive = document.querySelectorAll(DESIRED_ELEMENTS.join(","));
 
-  switch (clickBy) {
-    case "selector":
-      element = document.querySelector(clickValue);
-      description = `selector "${clickValue}"`;
-      break;
+  allInteractive.forEach((el, i) => {
+    const tagName = el.tagName.toLowerCase();
+    const type = el.type || "";
+    const id = el.id || "";
+    const name = el.name || "";
+    const text = (el.innerText || el.textContent || el.value || "").trim().substring(0, 40);
+    const href = el.href ? el.href.substring(0, 40) : "";
 
-    case "text":
-      // Search all interactive elements for matching text content
-      const allInteractive = document.querySelectorAll(DESIRED_ELEMENTS.join(","));
-      for (const el of allInteractive) {
-        const text = (el.innerText || el.textContent || "").trim();
-        if (text === clickValue || text.toLowerCase() === clickValue.toLowerCase()) {
-          element = el;
-          break;
-        }
-      }
-      description = `text "${clickValue}"`;
-      break;
+    // Build readable label
+    let label = `[${i}] <${tagName}`;
+    if (type) label += ` type="${type}"`;
+    if (id) label += ` #${id}`;
+    if (name) label += ` name="${name}"`;
+    if (text) label += ` "${text}"`;
+    if (href) label += ` → ${href}`;
+    label += ">";
 
-    case "id":
-      element = document.getElementById(clickValue);
-      description = `id "${clickValue}"`;
-      break;
+    // Build CSS selector
+    let selector = tagName;
+    if (id) selector = `#${id}`;
+    else if (name) selector += `[name="${name}"]`;
 
-    case "index": {
-      const allInteractive = document.querySelectorAll(DESIRED_ELEMENTS.join(","));
-      const idx = parseInt(clickValue, 10);
-      if (!isNaN(idx) && idx >= 0 && idx < allInteractive.length) {
-        element = allInteractive[idx];
-      }
-      description = `index ${idx} of ${allInteractive.length} interactive elements`;
-      break;
-    }
+    elements.push({
+      index: i,
+      tagName: tagName,
+      type: type,
+      id: id,
+      name: name,
+      text: text,
+      label: label,
+      selector: selector
+    });
+  });
 
-    default:
-      return { success: false, error: `Unknown identification method: ${clickBy}` };
+  return { elements: elements };
+}
+
+// ─── Click Element by Index ─────────────────────────────────────────────────
+function clickByIndex(index) {
+  const allInteractive = document.querySelectorAll(DESIRED_ELEMENTS.join(","));
+
+  if (index < 0 || index >= allInteractive.length) {
+    return { success: false, error: `Index ${index} out of range (0-${allInteractive.length - 1})` };
   }
 
-  if (!element) {
-    return { success: false, error: `Element not found by ${description}` };
-  }
+  const element = allInteractive[index];
+  const tagName = element.tagName.toLowerCase();
+  const text = (element.innerText || element.textContent || element.value || "").trim().substring(0, 50);
 
   // Scroll into view
   element.scrollIntoView({ behavior: "smooth", block: "center" });
 
   // Brief delay for scroll animation
   setTimeout(() => {
-    // Focus and click
     element.focus();
     element.click();
 
@@ -131,9 +141,8 @@ function clickElementByDOM(clickBy, clickValue) {
 
   return {
     success: true,
-    description: description,
-    tagName: element.tagName,
-    id: element.id || "",
-    text: (element.innerText || element.textContent || "").trim().substring(0, 50)
+    description: `<${tagName}> "${text}" (index ${index})`,
+    tagName: tagName,
+    index: index
   };
 }
