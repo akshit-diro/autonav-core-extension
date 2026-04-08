@@ -3,7 +3,7 @@
   "name": "Hello World",
   "version": "1.0",
   "description": "Interactive DOM & Screenshot extension",
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": ["storage", "activeTab", "scripting", "downloads"],
   "action": {
     "default_popup": "popup.html"
   },

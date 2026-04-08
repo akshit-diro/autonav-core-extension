@@ -17,6 +17,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const apiUrlInput = document.getElementById("apiUrl");
   const saveBtn = document.getElementById("saveBtn");
   const logArea = document.getElementById("logArea");
+  const downloadMonitorBtn = document.getElementById("downloadMonitorBtn");
+
+  let downloadMonitoringActive = false;
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
   function setStatus(message, type = "info") {
@@ -378,6 +381,46 @@ document.addEventListener("DOMContentLoaded", () => {
     } finally {
       fillBtn.disabled = false;
     }
+  });
+
+  // ─── 9. Toggle Download Monitor ───────────────────────────────────────────
+  downloadMonitorBtn.addEventListener("click", async () => {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "toggleDownloadMonitoring",
+        enabled: downloadMonitorBtn.textContent.includes("Enable")
+      });
+
+      downloadMonitoringActive = response.active;
+      downloadMonitorBtn.textContent = downloadMonitoringActive
+        ? "9. Disable Download Monitor"
+        : "9. Enable Download Monitor";
+
+      setStatus(`Download monitoring ${downloadMonitoringActive ? "ENABLED" : "DISABLED"}`, "success");
+      log(`Download monitor ${downloadMonitoringActive ? "activated" : "deactivated"}`, "DOWNLOAD");
+    } catch (error) {
+      setStatus("Error: " + error.message, "error");
+      log("Download monitor error: " + error.message);
+    }
+  });
+
+  // ─── Listen for download events from background ───────────────────────────
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === "downloadEvent") {
+      const d = message.data;
+      if (d.event === "created") {
+        log(`Download started: ${d.filename} (${(d.totalBytes / 1024).toFixed(1)}KB)`, "DOWNLOAD");
+      } else if (d.event === "changed") {
+        if (d.state === "complete") {
+          log(`Download complete: ${d.filename}`, "DOWNLOAD");
+        } else if (d.state === "interrupted") {
+          log(`Download interrupted: ${d.filename}`, "DOWNLOAD");
+        } else if (d.state === "in_progress") {
+          log(`Download in progress: ${d.filename} (${((d.bytesReceived / d.totalBytes) * 100).toFixed(0)}%)`, "DOWNLOAD");
+        }
+      }
+    }
+    sendResponse({ status: "received" });
   });
 
   // ─── Save Config ──────────────────────────────────────────────────────────
