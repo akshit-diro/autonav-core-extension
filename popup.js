@@ -1,4 +1,26 @@
-// ─── Utilities ──────────────────────────────────────────────────────────────
+// ─── Config ─────────────────────────────────────────────────────────────────
+const Config = {
+  get elements() {
+    return [
+      "domBtn", "screenshotBtn", "messageBtn", "getBtn", "postBtn",
+      "loadPopupBtn", "clickBtn", "fillBtn", "fillValue",
+      "fillElementDropdown", "refreshFillElementsBtn", "elementDropdown",
+      "refreshElementsBtn", "apiUrl", "saveBtn", "logArea",
+      "downloadMonitorBtn", "status"
+    ];
+  },
+  defaultApiUrl: "https://httpbin.org/get",
+  screenshotFormat: "png",
+  logSnippetLength: 150,
+  sampleSnippetLength: 100
+};
+
+// ─── State ──────────────────────────────────────────────────────────────────
+const State = {
+  downloadMonitoringActive: false
+};
+
+// ─── Utils ──────────────────────────────────────────────────────────────────
 const Utils = (() => {
   let statusEl, logArea;
 
@@ -15,7 +37,7 @@ const Utils = (() => {
 
   function log(message, section = null) {
     if (!logArea) return;
-    const separator = section ? "\n======== [" + section + "] ========\n" : "";
+    const separator = section ? `\n======== [${section}] ========\n` : "";
     const timestamp = new Date().toLocaleTimeString();
     const logLine = `${separator}[${timestamp}] ${message}`;
     logArea.textContent += logLine;
@@ -25,7 +47,7 @@ const Utils = (() => {
 
   async function getConfig() {
     const result = await chrome.storage.local.get(["apiUrl"]);
-    return result.apiUrl || "https://httpbin.org/get";
+    return result.apiUrl || Config.defaultApiUrl;
   }
 
   async function setConfig(data) {
@@ -50,10 +72,7 @@ const Utils = (() => {
   }
 
   async function injectAndMessage(tabId, message) {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["content.js"]
-    });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
     return chrome.tabs.sendMessage(tabId, message);
   }
 
@@ -74,40 +93,27 @@ const Utils = (() => {
   return { init, setStatus, log, getConfig, setConfig, withButton, getActiveTab, injectAndMessage, populateDropdown };
 })();
 
-document.addEventListener("DOMContentLoaded", () => {
-  // ─── DOM Elements ─────────────────────────────────────────────────────────
-  const statusEl = document.getElementById("status");
-  const domBtn = document.getElementById("domBtn");
-  const screenshotBtn = document.getElementById("screenshotBtn");
-  const messageBtn = document.getElementById("messageBtn");
-  const getBtn = document.getElementById("getBtn");
-  const postBtn = document.getElementById("postBtn");
-  const loadPopupBtn = document.getElementById("loadPopupBtn");
-  const clickBtn = document.getElementById("clickBtn");
-  const fillBtn = document.getElementById("fillBtn");
-  const fillValueInput = document.getElementById("fillValue");
-  const fillElementDropdown = document.getElementById("fillElementDropdown");
-  const refreshFillElementsBtn = document.getElementById("refreshFillElementsBtn");
-  const elementDropdown = document.getElementById("elementDropdown");
-  const refreshElementsBtn = document.getElementById("refreshElementsBtn");
-  const apiUrlInput = document.getElementById("apiUrl");
-  const saveBtn = document.getElementById("saveBtn");
-  const logArea = document.getElementById("logArea");
-  const downloadMonitorBtn = document.getElementById("downloadMonitorBtn");
+// ─── DOM ────────────────────────────────────────────────────────────────────
+const DOM = (() => {
+  const cache = {};
 
-  let downloadMonitoringActive = false;
+  function init() {
+    Config.elements.forEach((id) => {
+      cache[id] = document.getElementById(id);
+    });
+  }
 
-  // ─── Initialize ───────────────────────────────────────────────────────────
-  Utils.init(statusEl, logArea);
-  Utils.getConfig().then((url) => {
-    apiUrlInput.value = url;
-    Utils.log("Config loaded: " + url);
-  });
+  function get(key) {
+    return cache[key];
+  }
 
-  // ─── Event Handler Functions ──────────────────────────────────────────────
+  return { init, get };
+})();
 
+// ─── Handlers ───────────────────────────────────────────────────────────────
+const Handlers = (() => {
   async function handleExtractDom() {
-    Utils.withButton(domBtn, "DOM EXTRACT", async () => {
+    Utils.withButton(DOM.get("domBtn"), "DOM EXTRACT", async () => {
       Utils.setStatus("Extracting elements...", "info");
       Utils.log("Triggering DOM extraction in content script...", "DOM EXTRACT");
       const tab = await Utils.getActiveTab();
@@ -115,7 +121,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (response && response.count) {
         Utils.setStatus(`Extracted ${response.count} elements`, "success");
         Utils.log(`Received ${response.count} interactive elements`, "DOM EXTRACT");
-        Utils.log(`Sample: ${JSON.stringify(response.sample).substring(0, 100)}...`, "DOM EXTRACT");
+        Utils.log(`Sample: ${JSON.stringify(response.sample).substring(0, Config.sampleSnippetLength)}...`, "DOM EXTRACT");
       } else {
         Utils.setStatus("No response from content script", "error");
         Utils.log("No response received", "DOM EXTRACT");
@@ -124,10 +130,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function handleScreenshot() {
-    Utils.withButton(screenshotBtn, "SCREENSHOT", async () => {
+    Utils.withButton(DOM.get("screenshotBtn"), "SCREENSHOT", async () => {
       Utils.setStatus("Capturing screenshot...", "info");
       Utils.log("Capturing visible tab screenshot...", "SCREENSHOT");
-      const dataUrl = await chrome.tabs.captureVisibleTab(chrome.windows.WINDOW_ID_CURRENT, { format: "png" });
+      const dataUrl = await chrome.tabs.captureVisibleTab(chrome.windows.WINDOW_ID_CURRENT, { format: Config.screenshotFormat });
       const base64 = dataUrl.split(",")[1];
       await Utils.setConfig({ screenshotBase64: base64 });
       Utils.setStatus(`Screenshot saved (${base64.length} chars)`, "success");
@@ -136,7 +142,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function handleSendContentMessage() {
-    Utils.withButton(messageBtn, "CONTENT MSG", async () => {
+    Utils.withButton(DOM.get("messageBtn"), "CONTENT MSG", async () => {
       Utils.setStatus("Sending message to content script...", "info");
       Utils.log("Requesting content script to send message back...", "CONTENT MSG");
       const tab = await Utils.getActiveTab();
@@ -147,49 +153,49 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function handleGetRequest() {
-    Utils.withButton(getBtn, "GET REQUEST", async () => {
-      const url = apiUrlInput.value || "https://httpbin.org/get";
+    Utils.withButton(DOM.get("getBtn"), "GET REQUEST", async () => {
+      const url = DOM.get("apiUrl").value || Config.defaultApiUrl;
       Utils.setStatus(`GET ${url}...`, "info");
       Utils.log(`Making GET request to: ${url}`, "GET REQUEST");
       const response = await fetch(url);
       const data = await response.json();
       Utils.setStatus("GET request successful", "success");
-      Utils.log(`Response: ${JSON.stringify(data).substring(0, 150)}...`, "GET REQUEST");
+      Utils.log(`Response: ${JSON.stringify(data).substring(0, Config.logSnippetLength)}...`, "GET REQUEST");
     });
   }
 
   async function handlePostRequest() {
-    Utils.withButton(postBtn, "POST REQUEST", async () => {
-      const url = apiUrlInput.value || "https://httpbin.org/post";
+    Utils.withButton(DOM.get("postBtn"), "POST REQUEST", async () => {
+      const url = DOM.get("apiUrl").value || "https://httpbin.org/post";
       Utils.setStatus(`POST ${url}...`, "info");
       Utils.log(`Making POST request to: ${url}`, "POST REQUEST");
       const payload = { timestamp: Date.now(), message: "Hello from extension", screenshotStored: true };
       const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json();
       Utils.setStatus("POST request successful", "success");
-      Utils.log(`Response: ${JSON.stringify(data).substring(0, 150)}...`, "POST REQUEST");
+      Utils.log(`Response: ${JSON.stringify(data).substring(0, Config.logSnippetLength)}...`, "POST REQUEST");
     });
   }
 
   async function handleLoadPopup() {
-    Utils.withButton(loadPopupBtn, "LOAD POPUP", async () => {
+    Utils.withButton(DOM.get("loadPopupBtn"), "LOAD POPUP", async () => {
       Utils.setStatus("Opening overlay...", "info");
       Utils.log("Injecting page overlay...", "LOAD POPUP");
       const tab = await Utils.getActiveTab();
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: showOverlay });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: Overlay.show });
       Utils.setStatus("Overlay displayed on page", "success");
       Utils.log("Overlay injected into page DOM", "LOAD POPUP");
     });
   }
 
   async function handleRefreshElements() {
-    Utils.withButton(refreshElementsBtn, "REFRESH", async () => {
+    Utils.withButton(DOM.get("refreshElementsBtn"), "REFRESH", async () => {
       Utils.setStatus("Scanning page elements...", "info");
       Utils.log("Extracting interactive elements for dropdown...", "REFRESH");
       const tab = await Utils.getActiveTab();
       const response = await Utils.injectAndMessage(tab.id, { type: "getElementsList" });
       Utils.populateDropdown(
-        elementDropdown,
+        DOM.get("elementDropdown"),
         response?.elements || [],
         (el, i) => JSON.stringify({ index: i, id: el.id, selector: el.selector }),
         (el) => el.label,
@@ -206,8 +212,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function handleClickElement() {
-    Utils.withButton(clickBtn, "CLICK", async () => {
-      const selected = elementDropdown.value;
+    Utils.withButton(DOM.get("clickBtn"), "CLICK", async () => {
+      const selected = DOM.get("elementDropdown").value;
       if (!selected) {
         Utils.setStatus("Select an element first (click Refresh)", "error");
         Utils.log("No element selected", "CLICK");
@@ -229,13 +235,13 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function handleRefreshFillElements() {
-    Utils.withButton(refreshFillElementsBtn, "REFILL", async () => {
+    Utils.withButton(DOM.get("refreshFillElementsBtn"), "REFILL", async () => {
       Utils.setStatus("Scanning page textboxes...", "info");
       Utils.log("Extracting fillable elements for dropdown...", "REFILL");
       const tab = await Utils.getActiveTab();
       const response = await Utils.injectAndMessage(tab.id, { type: "getFillElementsList" });
       Utils.populateDropdown(
-        fillElementDropdown,
+        DOM.get("fillElementDropdown"),
         response?.elements || [],
         (el) => el.selector,
         (el) => el.label,
@@ -252,9 +258,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function handleFillTextbox() {
-    Utils.withButton(fillBtn, "FILL", async () => {
-      const selector = fillElementDropdown.value;
-      const fillText = fillValueInput.value;
+    Utils.withButton(DOM.get("fillBtn"), "FILL", async () => {
+      const selector = DOM.get("fillElementDropdown").value;
+      const fillText = DOM.get("fillValue").value;
       if (!selector) {
         Utils.setStatus("Select a textbox first (click Refresh)", "error");
         Utils.log("No textbox selected", "FILL");
@@ -280,24 +286,25 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function handleToggleDownloadMonitor() {
-    Utils.withButton(downloadMonitorBtn, "DOWNLOAD", async () => {
+    Utils.withButton(DOM.get("downloadMonitorBtn"), "DOWNLOAD", async () => {
+      const btn = DOM.get("downloadMonitorBtn");
       const response = await chrome.runtime.sendMessage({
         type: "toggleDownloadMonitoring",
-        enabled: downloadMonitorBtn.textContent.includes("Enable")
+        enabled: btn.textContent.includes("Enable")
       });
-      downloadMonitoringActive = response.active;
-      downloadMonitorBtn.textContent = downloadMonitoringActive
+      State.downloadMonitoringActive = response.active;
+      btn.textContent = State.downloadMonitoringActive
         ? "9. Disable Download Monitor"
         : "9. Enable Download Monitor";
-      Utils.setStatus(`Download monitoring ${downloadMonitoringActive ? "ENABLED" : "DISABLED"}`, "success");
-      Utils.log(`Download monitor ${downloadMonitoringActive ? "activated" : "deactivated"}`, "DOWNLOAD");
+      Utils.setStatus(`Download monitoring ${State.downloadMonitoringActive ? "ENABLED" : "DISABLED"}`, "success");
+      Utils.log(`Download monitor ${State.downloadMonitoringActive ? "activated" : "deactivated"}`, "DOWNLOAD");
     });
   }
 
   async function handleSaveConfig() {
-    await Utils.setConfig({ apiUrl: apiUrlInput.value });
+    await Utils.setConfig({ apiUrl: DOM.get("apiUrl").value });
     Utils.setStatus("Config saved", "success");
-    Utils.log("Config saved: " + apiUrlInput.value, "SAVE CONFIG");
+    Utils.log("Config saved: " + DOM.get("apiUrl").value, "SAVE CONFIG");
   }
 
   function handleDownloadEvent(message) {
@@ -323,107 +330,120 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ─── Event Listener Registrations ─────────────────────────────────────────
+  return {
+    handleExtractDom, handleScreenshot, handleSendContentMessage,
+    handleGetRequest, handlePostRequest, handleLoadPopup,
+    handleRefreshElements, handleClickElement, handleRefreshFillElements,
+    handleFillTextbox, handleToggleDownloadMonitor, handleSaveConfig,
+    handleDownloadEvent, handleContentMessage
+  };
+})();
 
-  domBtn.addEventListener("click", handleExtractDom);
-  screenshotBtn.addEventListener("click", handleScreenshot);
-  messageBtn.addEventListener("click", handleSendContentMessage);
-  getBtn.addEventListener("click", handleGetRequest);
-  postBtn.addEventListener("click", handlePostRequest);
-  loadPopupBtn.addEventListener("click", handleLoadPopup);
-  refreshElementsBtn.addEventListener("click", handleRefreshElements);
-  clickBtn.addEventListener("click", handleClickElement);
-  refreshFillElementsBtn.addEventListener("click", handleRefreshFillElements);
-  fillBtn.addEventListener("click", handleFillTextbox);
-  downloadMonitorBtn.addEventListener("click", handleToggleDownloadMonitor);
-  saveBtn.addEventListener("click", handleSaveConfig);
+// ─── Listeners ──────────────────────────────────────────────────────────────
+const Listeners = (() => {
+  function init() {
+    DOM.get("domBtn").addEventListener("click", Handlers.handleExtractDom);
+    DOM.get("screenshotBtn").addEventListener("click", Handlers.handleScreenshot);
+    DOM.get("messageBtn").addEventListener("click", Handlers.handleSendContentMessage);
+    DOM.get("getBtn").addEventListener("click", Handlers.handleGetRequest);
+    DOM.get("postBtn").addEventListener("click", Handlers.handlePostRequest);
+    DOM.get("loadPopupBtn").addEventListener("click", Handlers.handleLoadPopup);
+    DOM.get("refreshElementsBtn").addEventListener("click", Handlers.handleRefreshElements);
+    DOM.get("clickBtn").addEventListener("click", Handlers.handleClickElement);
+    DOM.get("refreshFillElementsBtn").addEventListener("click", Handlers.handleRefreshFillElements);
+    DOM.get("fillBtn").addEventListener("click", Handlers.handleFillTextbox);
+    DOM.get("downloadMonitorBtn").addEventListener("click", Handlers.handleToggleDownloadMonitor);
+    DOM.get("saveBtn").addEventListener("click", Handlers.handleSaveConfig);
 
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    chrome.runtime.onMessage.addListener(onRuntimeMessage);
+  }
+
+  function onRuntimeMessage(message, sender, sendResponse) {
     if (message.type === "downloadEvent") {
-      handleDownloadEvent(message);
+      Handlers.handleDownloadEvent(message);
     } else {
-      handleContentMessage(message);
+      Handlers.handleContentMessage(message);
     }
     sendResponse({ status: "received" });
+  }
+
+  return { init };
+})();
+
+// ─── Overlay ────────────────────────────────────────────────────────────────
+const Overlay = (() => {
+  function show() {
+    const existing = document.getElementById("autonav-overlay");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "autonav-overlay";
+    Object.assign(overlay.style, {
+      position: "fixed", top: "20px", right: "20px",
+      width: "400px", maxHeight: "80vh", background: "white",
+      borderRadius: "12px", boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+      zIndex: "2147483647",
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+      overflow: "hidden", display: "flex", flexDirection: "column"
+    });
+
+    const header = document.createElement("div");
+    Object.assign(header.style, {
+      padding: "16px 20px",
+      background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+      color: "white", display: "flex", justifyContent: "space-between", alignItems: "center"
+    });
+    header.innerHTML = `<h3 style="margin:0;font-size:16px;">Auto Nav - State</h3>
+      <button id="overlay-close" style="background:rgba(255,255,255,0.2);border:none;color:white;
+      width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:16px;line-height:1;">×</button>`;
+
+    const content = document.createElement("div");
+    Object.assign(content.style, {
+      padding: "20px", overflowY: "auto", fontSize: "13px", lineHeight: "1.6", color: "#333"
+    });
+
+    const pageData = {
+      url: window.location.href, title: document.title,
+      interactiveElements: document.querySelectorAll("INPUT,SELECT,A,BUTTON,TEXTAREA").length,
+      bodyHeight: document.body.scrollHeight + "px",
+      viewportWidth: window.innerWidth + "px",
+      timestamp: new Date().toLocaleTimeString()
+    };
+
+    content.innerHTML = `
+      <div style="margin-bottom:12px;">
+        <strong style="color:#764ba2;">Page Info</strong>
+        <table style="width:100%;border-collapse:collapse;margin-top:6px;">
+          <tr><td style="padding:4px 8px 4px 0;color:#666;">URL</td><td style="word-break:break-all;">${pageData.url}</td></tr>
+          <tr><td style="padding:4px 8px 4px 0;color:#666;">Title</td><td>${pageData.title}</td></tr>
+          <tr><td style="padding:4px 8px 4px 0;color:#666;">Interactive Elements</td><td>${pageData.interactiveElements}</td></tr>
+          <tr><td style="padding:4px 8px 4px 0;color:#666;">Body Height</td><td>${pageData.bodyHeight}</td></tr>
+          <tr><td style="padding:4px 8px 4px 0;color:#666;">Viewport Width</td><td>${pageData.viewportWidth}</td></tr>
+          <tr><td style="padding:4px 8px 4px 0;color:#666;">Time</td><td>${pageData.timestamp}</td></tr>
+        </table>
+      </div>
+      <div style="padding:10px;background:#f5f5f5;border-radius:6px;font-size:12px;color:#888;">
+        💡 Use the extension popup to extract elements, take screenshots, or make API calls
+      </div>`;
+
+    header.querySelector("#overlay-close").addEventListener("click", () => overlay.remove());
+    overlay.appendChild(header);
+    overlay.appendChild(content);
+    document.body.appendChild(overlay);
+  }
+
+  return { show };
+})();
+
+// ─── Init ───────────────────────────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", () => {
+  DOM.init();
+  Utils.init(DOM.get("status"), DOM.get("logArea"));
+
+  Utils.getConfig().then((url) => {
+    DOM.get("apiUrl").value = url;
+    Utils.log("Config loaded: " + url);
   });
+
+  Listeners.init();
 });
-
-// ─── Page Overlay (injected via scripting API) ─────────────────────────────
-function showOverlay() {
-  const existing = document.getElementById("autonav-overlay");
-  if (existing) existing.remove();
-
-  const overlay = document.createElement("div");
-  overlay.id = "autonav-overlay";
-  Object.assign(overlay.style, {
-    position: "fixed",
-    top: "20px",
-    right: "20px",
-    width: "400px",
-    maxHeight: "80vh",
-    background: "white",
-    borderRadius: "12px",
-    boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
-    zIndex: "2147483647",
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-    overflow: "hidden",
-    display: "flex",
-    flexDirection: "column"
-  });
-
-  const header = document.createElement("div");
-  Object.assign(header.style, {
-    padding: "16px 20px",
-    background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-    color: "white",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center"
-  });
-  header.innerHTML = `<h3 style="margin:0;font-size:16px;">Auto Nav - State</h3>
-    <button id="overlay-close" style="background:rgba(255,255,255,0.2);border:none;color:white;
-    width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:16px;line-height:1;">×</button>`;
-
-  const content = document.createElement("div");
-  Object.assign(content.style, {
-    padding: "20px",
-    overflowY: "auto",
-    fontSize: "13px",
-    lineHeight: "1.6",
-    color: "#333"
-  });
-
-  const pageData = {
-    url: window.location.href,
-    title: document.title,
-    interactiveElements: document.querySelectorAll("INPUT,SELECT,A,BUTTON,TEXTAREA").length,
-    bodyHeight: document.body.scrollHeight + "px",
-    viewportWidth: window.innerWidth + "px",
-    timestamp: new Date().toLocaleTimeString()
-  };
-
-  content.innerHTML = `
-    <div style="margin-bottom:12px;">
-      <strong style="color:#764ba2;">Page Info</strong>
-      <table style="width:100%;border-collapse:collapse;margin-top:6px;">
-        <tr><td style="padding:4px 8px 4px 0;color:#666;">URL</td><td style="word-break:break-all;">${pageData.url}</td></tr>
-        <tr><td style="padding:4px 8px 4px 0;color:#666;">Title</td><td>${pageData.title}</td></tr>
-        <tr><td style="padding:4px 8px 4px 0;color:#666;">Interactive Elements</td><td>${pageData.interactiveElements}</td></tr>
-        <tr><td style="padding:4px 8px 4px 0;color:#666;">Body Height</td><td>${pageData.bodyHeight}</td></tr>
-        <tr><td style="padding:4px 8px 4px 0;color:#666;">Viewport Width</td><td>${pageData.viewportWidth}</td></tr>
-        <tr><td style="padding:4px 8px 4px 0;color:#666;">Time</td><td>${pageData.timestamp}</td></tr>
-      </table>
-    </div>
-    <div style="padding:10px;background:#f5f5f5;border-radius:6px;font-size:12px;color:#888;">
-      💡 Use the extension popup to extract elements, take screenshots, or make API calls
-    </div>
-  `;
-
-  header.querySelector("#overlay-close").addEventListener("click", () => {
-    overlay.remove();
-  });
-
-  overlay.appendChild(header);
-  overlay.appendChild(content);
-  document.body.appendChild(overlay);
-}
