@@ -80,6 +80,27 @@
     .btn-get { background: #f57c00; color: white; }
     .btn-post { background: #d32f2f; color: white; }
     .btn-load { background: #00796b; color: white; }
+    .btn-click { background: #5e35b1; color: white; }
+
+    .click-config {
+      margin-top: 8px;
+      padding: 10px;
+      background: #ede7f6;
+      border-radius: 4px;
+    }
+
+    .click-config label {
+      margin-bottom: 2px;
+    }
+
+    .click-config input, .click-config select {
+      width: 100%;
+      padding: 5px 6px;
+      margin-bottom: 6px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 12px;
+    }
 
     .config-section {
       margin-top: 12px;
@@ -136,6 +157,19 @@
   <button id="getBtn" class="btn-get">4. Make GET Request</button>
   <button id="postBtn" class="btn-post">5. Make POST Request</button>
   <button id="loadPopupBtn" class="btn-load">6. Load Popup</button>
+  <button id="clickBtn" class="btn-click">7. Click Button on Page</button>
+
+  <div class="click-config" id="clickConfig">
+    <label for="clickBy">Identify button by:</label>
+    <select id="clickBy">
+      <option value="selector">CSS Selector</option>
+      <option value="text">Button Text</option>
+      <option value="id">Element ID</option>
+      <option value="index">Index (0-based)</option>
+    </select>
+    <label for="clickValue">Value:</label>
+    <input type="text" id="clickValue" placeholder="e.g. #submit-btn, Submit, myId, 0">
+  </div>
 
   <div class="config-section">
     <h2>API Config</h2>

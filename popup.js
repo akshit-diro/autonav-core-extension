@@ -7,6 +7,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const getBtn = document.getElementById("getBtn");
   const postBtn = document.getElementById("postBtn");
   const loadPopupBtn = document.getElementById("loadPopupBtn");
+  const clickBtn = document.getElementById("clickBtn");
+  const clickBySelect = document.getElementById("clickBy");
+  const clickValueInput = document.getElementById("clickValue");
   const apiUrlInput = document.getElementById("apiUrl");
   const saveBtn = document.getElementById("saveBtn");
   const logArea = document.getElementById("logArea");
@@ -204,6 +207,51 @@ document.addEventListener("DOMContentLoaded", () => {
       log("Overlay error: " + error.message);
     } finally {
       loadPopupBtn.disabled = false;
+    }
+  });
+
+  // ─── 7. Click Button on Page ──────────────────────────────────────────────
+  clickBtn.addEventListener("click", async () => {
+    try {
+      clickBtn.disabled = true;
+      const clickBy = clickBySelect.value;
+      const clickValue = clickValueInput.value.trim();
+
+      if (!clickValue) {
+        setStatus("Enter a value to identify the button", "error");
+        log("No value provided for button identification", "CLICK");
+        clickBtn.disabled = false;
+        return;
+      }
+
+      setStatus(`Clicking button (${clickBy}: "${clickValue}")...`, "info");
+      log(`Finding and clicking element: ${clickBy}="${clickValue}"`, "CLICK");
+
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["content.js"]
+      });
+
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        type: "clickElement",
+        clickBy: clickBy,
+        clickValue: clickValue
+      });
+
+      if (response && response.success) {
+        setStatus(`Clicked: ${response.description}`, "success");
+        log(`Successfully clicked: ${response.description}`, "CLICK");
+      } else {
+        setStatus("Element not found: " + (response?.error || "unknown"), "error");
+        log(`Failed to find element: ${response?.error}`, "CLICK");
+      }
+    } catch (error) {
+      setStatus("Error: " + error.message, "error");
+      log("Click error: " + error.message);
+    } finally {
+      clickBtn.disabled = false;
     }
   });
 
