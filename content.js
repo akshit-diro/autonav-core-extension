@@ -6,13 +6,6 @@ console.log("[AutoNav Content] Loaded on:", window.location.href);
 
 // ─── Utilities ──────────────────────────────────────────────────────────────
 const Utils = (() => {
-  /**
-   * Extract metadata from an element and build a readable label + CSS selector.
-   * @param {Element} el
-   * @param {number} index
-   * @param {Object} opts - { textOverride, href, labelPrefix }
-   * @returns {Object}
-   */
   function buildElementInfo(el, index, opts = {}) {
     const tagName = el.tagName.toLowerCase();
     const type = el.type || "";
@@ -36,12 +29,6 @@ const Utils = (() => {
     return { index, tagName, type, id, name, text, label, selector };
   }
 
-  /**
-   * Scroll element into view, then apply visual feedback after a delay.
-   * @param {Element} el
-   * @param {Object} opts - { scrollDelay, feedbackStyle, feedbackValue, feedbackDuration, action }
-   * @returns {Promise<void>}
-   */
   function scrollAndHighlight(el, opts = {}) {
     const scrollDelay = opts.scrollDelay ?? 300;
     const feedbackStyle = opts.feedbackStyle || "outline";
@@ -53,8 +40,6 @@ const Utils = (() => {
     return new Promise((resolve) => {
       setTimeout(() => {
         if (opts.action) opts.action(el);
-
-        // Apply visual feedback
         const original = el.style[feedbackStyle];
         el.style[feedbackStyle] = feedbackValue;
         el.style.transition = `${feedbackStyle} 0.3s`;
@@ -76,47 +61,73 @@ const Utils = (() => {
   return { buildElementInfo, scrollAndHighlight, isFillableElement };
 })();
 
-// ─── Message Listener ───────────────────────────────────────────────────────
+// ─── Message Handler Functions ──────────────────────────────────────────────
+
+function handleExtractDom() {
+  const result = extractInteractiveElements();
+  console.log("[AutoNav Content] Extracted", result.count, "elements");
+  chrome.runtime.sendMessage({ type: "domExtracted", count: result.count });
+  return result;
+}
+
+function handleGetElementsList() {
+  const list = getElementsList();
+  console.log("[AutoNav Content] Returning", list.elements.length, "elements for dropdown");
+  return list;
+}
+
+function handleGetFillElementsList() {
+  const list = getFillElementsList();
+  console.log("[AutoNav Content] Returning", list.elements.length, "fillable elements for dropdown");
+  return list;
+}
+
+function handleClickByIndex(message) {
+  const result = clickByIndex(message.index);
+  console.log("[AutoNav Content] Click result:", result);
+  return result;
+}
+
+function handleFillBySelector(message) {
+  const result = fillBySelector(message.selector, message.text);
+  console.log("[AutoNav Content] Fill result:", result);
+  return result;
+}
+
+function handleSendMessageToBackground() {
+  console.log("[AutoNav Content] Sending message to background");
+  chrome.runtime.sendMessage({
+    type: "contentMessage",
+    text: "Hello from content script on " + window.location.href
+  });
+  return { status: "message sent" };
+}
+
+// ─── Message Listener Registration ──────────────────────────────────────────
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("[AutoNav Content] Received message:", message.type);
 
-  if (message.type === "extractDom") {
-    const result = extractInteractiveElements();
-    console.log("[AutoNav Content] Extracted", result.count, "elements");
-    chrome.runtime.sendMessage({
-      type: "domExtracted",
-      count: result.count
-    });
+  const handlers = {
+    extractDom: handleExtractDom,
+    getElementsList: handleGetElementsList,
+    getFillElementsList: handleGetFillElementsList,
+    clickByIndex: handleClickByIndex,
+    fillBySelector: handleFillBySelector,
+    sendMessageToBackground: handleSendMessageToBackground
+  };
+
+  const handler = handlers[message.type];
+  if (handler) {
+    const result = handler(message);
     sendResponse(result);
-  } else if (message.type === "getElementsList") {
-    const list = getElementsList();
-    console.log("[AutoNav Content] Returning", list.elements.length, "elements for dropdown");
-    sendResponse(list);
-  } else if (message.type === "getFillElementsList") {
-    const list = getFillElementsList();
-    console.log("[AutoNav Content] Returning", list.elements.length, "fillable elements for dropdown");
-    sendResponse(list);
-  } else if (message.type === "clickByIndex") {
-    const result = clickByIndex(message.index);
-    console.log("[AutoNav Content] Click result:", result);
-    sendResponse(result);
-  } else if (message.type === "fillBySelector") {
-    const result = fillBySelector(message.selector, message.text);
-    console.log("[AutoNav Content] Fill result:", result);
-    sendResponse(result);
-  } else if (message.type === "sendMessageToBackground") {
-    console.log("[AutoNav Content] Sending message to background");
-    chrome.runtime.sendMessage({
-      type: "contentMessage",
-      text: "Hello from content script on " + window.location.href
-    });
-    sendResponse({ status: "message sent" });
   }
 
   return true; // Keep message channel open for async response
 });
 
 // ─── DOM Extraction ─────────────────────────────────────────────────────────
+
 function extractInteractiveElements() {
   const allData = [];
   iterateDOM(document.body);
@@ -132,10 +143,7 @@ function extractInteractiveElements() {
     });
   });
 
-  return {
-    count: allData.length,
-    sample: allData[0] || null
-  };
+  return { count: allData.length, sample: allData[0] || null };
 }
 
 function iterateDOM(element) {
@@ -148,6 +156,7 @@ function iterateDOM(element) {
 }
 
 // ─── Get Elements List for Dropdown ─────────────────────────────────────────
+
 function getElementsList() {
   const elements = [];
   const allInteractive = document.querySelectorAll(DESIRED_ELEMENTS.join(","));
@@ -163,6 +172,7 @@ function getElementsList() {
 }
 
 // ─── Get Fillable Elements List for Dropdown ────────────────────────────────
+
 function getFillElementsList() {
   const elements = [];
   const allInteractive = document.querySelectorAll(DESIRED_ELEMENTS.join(","));
@@ -171,11 +181,7 @@ function getFillElementsList() {
     if (!Utils.isFillableElement(el)) return;
 
     const text = (el.placeholder || el.value || "").trim().substring(0, 40);
-    const info = Utils.buildElementInfo(el, elements.length, {
-      textOverride: text,
-      labelPrefix: undefined
-    });
-    // Rebuild label with placeholder prefix
+    const info = Utils.buildElementInfo(el, elements.length, { textOverride: text });
     info.label = `[${elements.length}] <${info.tagName}${info.type ? ` type="${info.type}"` : ""}${info.id ? ` #${info.id}` : ""}${info.name ? ` name="${info.name}"` : ""}${info.text ? ` placeholder="${info.text}"` : ""}>`;
     elements.push(info);
   });
@@ -184,6 +190,7 @@ function getFillElementsList() {
 }
 
 // ─── Click Element by Index ─────────────────────────────────────────────────
+
 function clickByIndex(index) {
   const allInteractive = document.querySelectorAll(DESIRED_ELEMENTS.join(","));
 
@@ -205,15 +212,11 @@ function clickByIndex(index) {
     feedbackValue: "3px solid #ff5722"
   });
 
-  return {
-    success: true,
-    description: `<${tagName}> "${text}" (index ${index})`,
-    tagName,
-    index
-  };
+  return { success: true, description: `<${tagName}> "${text}" (index ${index})`, tagName, index };
 }
 
 // ─── Fill Textbox by CSS Selector ───────────────────────────────────────────
+
 function fillBySelector(selector, text) {
   const element = document.querySelector(selector);
 
@@ -252,10 +255,5 @@ function fillBySelector(selector, text) {
 
   const desc = `<${tagName}${type ? ` type="${type}"` : ""}> filled with "${text.substring(0, 30)}${text.length > 30 ? "..." : ""}"`;
 
-  return {
-    success: true,
-    description: desc,
-    tagName,
-    selector
-  };
+  return { success: true, description: desc, tagName, selector };
 }

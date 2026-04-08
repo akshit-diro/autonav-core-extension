@@ -13,31 +13,31 @@ const Utils = (() => {
   return { notifyPopup, createDownloadEntry };
 })();
 
-// ─── Download Monitoring State ──────────────────────────────────────────────
+// ─── State ──────────────────────────────────────────────────────────────────
 let downloadMonitoringActive = false;
 let downloadLog = [];
 
-// ─── Message Router ─────────────────────────────────────────────────────────
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log("[AutoNav Background] Received message:", message.type, message);
+// ─── Message Handler Functions ──────────────────────────────────────────────
 
-  if (message.type === "domExtracted") {
-    console.log("[AutoNav Background] Content script extracted", message.count, "elements");
-  } else if (message.type === "contentMessage") {
-    console.log("[AutoNav Background] Content says:", message.text);
-  } else if (message.type === "toggleDownloadMonitoring") {
-    downloadMonitoringActive = message.enabled;
-    console.log("[AutoNav Background] Download monitoring", message.enabled ? "ENABLED" : "DISABLED");
-    sendResponse({ active: downloadMonitoringActive });
-  } else if (message.type === "getDownloadLog") {
-    sendResponse({ log: downloadLog, active: downloadMonitoringActive });
-  }
+function handleDomExtracted(message) {
+  console.log("[AutoNav Background] Content script extracted", message.count, "elements");
+}
 
-  sendResponse({ status: "received" });
-});
+function handleContentMessage(message) {
+  console.log("[AutoNav Background] Content says:", message.text);
+}
 
-// ─── Download Listeners ─────────────────────────────────────────────────────
-chrome.downloads.onCreated.addListener((downloadItem) => {
+function handleToggleDownloadMonitoring(message) {
+  downloadMonitoringActive = message.enabled;
+  console.log("[AutoNav Background] Download monitoring", message.enabled ? "ENABLED" : "DISABLED");
+  return { active: downloadMonitoringActive };
+}
+
+function handleGetDownloadLog() {
+  return { log: downloadLog, active: downloadMonitoringActive };
+}
+
+function handleDownloadCreated(downloadItem) {
   if (!downloadMonitoringActive) return;
 
   const entry = Utils.createDownloadEntry("created", {
@@ -54,9 +54,9 @@ chrome.downloads.onCreated.addListener((downloadItem) => {
   downloadLog.push(entry);
   console.log("[AutoNav Background] Download created:", entry);
   Utils.notifyPopup(entry);
-});
+}
 
-chrome.downloads.onChanged.addListener((downloadDelta) => {
+function handleDownloadChanged(downloadDelta) {
   if (!downloadMonitoringActive) return;
 
   const entry = Utils.createDownloadEntry("changed", {
@@ -71,4 +71,28 @@ chrome.downloads.onChanged.addListener((downloadDelta) => {
   downloadLog.push(entry);
   console.log("[AutoNav Background] Download changed:", entry);
   Utils.notifyPopup(entry);
+}
+
+// ─── Event Listener Registrations ───────────────────────────────────────────
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log("[AutoNav Background] Received message:", message.type, message);
+
+  const handlers = {
+    domExtracted: handleDomExtracted,
+    contentMessage: handleContentMessage,
+    toggleDownloadMonitoring: handleToggleDownloadMonitoring,
+    getDownloadLog: handleGetDownloadLog
+  };
+
+  const handler = handlers[message.type];
+  if (handler) {
+    const result = handler(message);
+    if (result) sendResponse(result);
+  }
+
+  sendResponse({ status: "received" });
 });
+
+chrome.downloads.onCreated.addListener(handleDownloadCreated);
+chrome.downloads.onChanged.addListener(handleDownloadChanged);
