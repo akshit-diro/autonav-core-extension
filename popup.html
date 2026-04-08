@@ -155,13 +155,24 @@
 
   <div id="status" class="status info">Ready</div>
 
+  <!-- EXTRACT DOM + SCREENSHOT -->
   <button id="domBtn" class="btn-dom">1. Extract Interactive DOM Elements</button>
   <button id="screenshotBtn" class="btn-screenshot">2. Take Screenshot</button>
+
+  <!-- EXTENSION INTERNAL COMMUNICATION -->
   <button id="messageBtn" class="btn-message">3. Send Content → Background Message</button>
-  <button id="getBtn" class="btn-get">4. Make GET Request</button>
-  <button id="postBtn" class="btn-post">5. Make POST Request</button>
+
+  <!-- GET/POST INVOCATIONS -->
+  <div class="click-config" id="apiConfig" style="margin-bottom: 16px;">
+    <label for="apiUrl">API URL</label>
+    <input type="text" id="apiUrl" placeholder="https://httpbin.org/get">
+    <button id="saveBtn" style="background:#555;color:white;font-size:11px;padding:6px 10px;margin-bottom:8px;">Save Config</button>
+    <button id="getBtn" class="btn-get">4. Make GET Request</button>
+    <button id="postBtn" class="btn-post">5. Make POST Request</button>
+  </div>
   <button id="loadPopupBtn" class="btn-load">6. Load Popup</button>
 
+  <!-- EXECUTE CLICK -->
   <div class="click-config" id="clickConfig">
     <div style="margin-bottom:6px;">
       <div>
@@ -175,12 +186,6 @@
     <button id="clickBtn" class="btn-click">7. Click Element on Page</button>
   </div>
 
-  <div class="config-section">
-    <h2>API Config</h2>
-    <label for="apiUrl">API URL</label>
-    <input type="text" id="apiUrl" placeholder="https://httpbin.org/get">
-    <button id="saveBtn" style="background:#555;color:white;">Save Config</button>
-  </div>
 
   <div id="logArea" class="log-area">Waiting for actions...</div>
 
