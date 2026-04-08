@@ -187,25 +187,21 @@ document.addEventListener("DOMContentLoaded", () => {
   loadPopupBtn.addEventListener("click", async () => {
     try {
       loadPopupBtn.disabled = true;
-      setStatus("Loading state summary...", "info");
-      log("Gathering all stored data...", "LOAD POPUP");
+      setStatus("Opening overlay...", "info");
+      log("Injecting page overlay...", "LOAD POPUP");
 
-      const config = await chrome.storage.local.get(null);
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-      const screenshotStatus = config.screenshotBase64
-        ? `Yes (${config.screenshotBase64.length.toLocaleString()} base64 chars)`
-        : "No";
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: showOverlay
+      });
 
-      log("API URL: " + (config.apiUrl || "not set"), "LOAD POPUP");
-      log("Screenshot stored: " + screenshotStatus, "LOAD POPUP");
-      log("Storage keys: " + Object.keys(config).join(", ") || "none", "LOAD POPUP");
-      log("Extension version: 1.0", "LOAD POPUP");
-      log("Manifest version: 3", "LOAD POPUP");
-
-      setStatus("State summary loaded", "success");
+      setStatus("Overlay displayed on page", "success");
+      log("Overlay injected into page DOM", "LOAD POPUP");
     } catch (error) {
       setStatus("Error: " + error.message, "error");
-      log("Load error: " + error.message);
+      log("Overlay error: " + error.message);
     } finally {
       loadPopupBtn.disabled = false;
     }
@@ -228,3 +224,88 @@ document.addEventListener("DOMContentLoaded", () => {
     sendResponse({ status: "received" });
   });
 });
+
+// ─── Page Overlay (injected via scripting API) ─────────────────────────────
+function showOverlay() {
+  // Remove existing overlay if present
+  const existing = document.getElementById("autonav-overlay");
+  if (existing) existing.remove();
+
+  const overlay = document.createElement("div");
+  overlay.id = "autonav-overlay";
+  Object.assign(overlay.style, {
+    position: "fixed",
+    top: "20px",
+    right: "20px",
+    width: "400px",
+    maxHeight: "80vh",
+    background: "white",
+    borderRadius: "12px",
+    boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+    zIndex: "2147483647",
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column"
+  });
+
+  // Header
+  const header = document.createElement("div");
+  Object.assign(header.style, {
+    padding: "16px 20px",
+    background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+    color: "white",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center"
+  });
+  header.innerHTML = `<h3 style="margin:0;font-size:16px;">Auto Nav - State</h3>
+    <button id="overlay-close" style="background:rgba(255,255,255,0.2);border:none;color:white;
+    width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:16px;line-height:1;">×</button>`;
+
+  // Content area
+  const content = document.createElement("div");
+  Object.assign(content.style, {
+    padding: "20px",
+    overflowY: "auto",
+    fontSize: "13px",
+    lineHeight: "1.6",
+    color: "#333"
+  });
+
+  // Gather data (runs in content script context, no chrome.storage access)
+  const pageData = {
+    url: window.location.href,
+    title: document.title,
+    interactiveElements: document.querySelectorAll("INPUT,SELECT,A,BUTTON,TEXTAREA").length,
+    bodyHeight: document.body.scrollHeight + "px",
+    viewportWidth: window.innerWidth + "px",
+    timestamp: new Date().toLocaleTimeString()
+  };
+
+  content.innerHTML = `
+    <div style="margin-bottom:12px;">
+      <strong style="color:#764ba2;">Page Info</strong>
+      <table style="width:100%;border-collapse:collapse;margin-top:6px;">
+        <tr><td style="padding:4px 8px 4px 0;color:#666;">URL</td><td style="word-break:break-all;">${pageData.url}</td></tr>
+        <tr><td style="padding:4px 8px 4px 0;color:#666;">Title</td><td>${pageData.title}</td></tr>
+        <tr><td style="padding:4px 8px 4px 0;color:#666;">Interactive Elements</td><td>${pageData.interactiveElements}</td></tr>
+        <tr><td style="padding:4px 8px 4px 0;color:#666;">Body Height</td><td>${pageData.bodyHeight}</td></tr>
+        <tr><td style="padding:4px 8px 4px 0;color:#666;">Viewport Width</td><td>${pageData.viewportWidth}</td></tr>
+        <tr><td style="padding:4px 8px 4px 0;color:#666;">Time</td><td>${pageData.timestamp}</td></tr>
+      </table>
+    </div>
+    <div style="padding:10px;background:#f5f5f5;border-radius:6px;font-size:12px;color:#888;">
+      💡 Use the extension popup to extract elements, take screenshots, or make API calls
+    </div>
+  `;
+
+  // Close button handler
+  header.querySelector("#overlay-close").addEventListener("click", () => {
+    overlay.remove();
+  });
+
+  overlay.appendChild(header);
+  overlay.appendChild(content);
+  document.body.appendChild(overlay);
+}
